@@ -180,7 +180,8 @@ class World(object):
         
         for i in range(self.lidar_number):
             self.camera_manager[i] = CameraManager(self.player, self.width, self.height, self.surface_gap_x, self.surface_diplace_y,
-                                            [self.config[3*i],self.config[3*i+1],self.config[3*i+2]],i)
+                                            [self.config[6*i],self.config[6*i+1],self.config[6*i+2],self.config[6*i+3],
+                                             self.config[6*i+4],self.config[6*i+5]],i)
             self.camera_manager[i]._transform_index = cam_pos_index[i]
             self.camera_manager[i].set_sensor(cam_index[i], notify=False)
         
@@ -364,6 +365,9 @@ class CameraManager(object):
         self.x = config[0]
         self.y = config[1]
         self.z = config[2]
+        self.yaw = config[3]
+        self.pitch = config[4]
+        self.roll = config[5]
         self.lidar_number = lidar_number
         self.timedata = time.strftime("%Y-%d-%I-%M-%S",time.localtime(time.time()))
         timedata = self.timedata
@@ -374,11 +378,11 @@ class CameraManager(object):
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
         self._camera_transforms = [
-            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z)),
-            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=90)),
-            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=180)),
-            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=270)),
-            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z))]
+            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=config[3],pitch=config[4],roll=config[5])),
+            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=90+config[3],pitch=config[4],roll=config[5])),
+            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=180+config[3],pitch=config[4],roll=config[5])),
+            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=270+config[3],pitch=config[4],roll=config[5])),
+            carla.Transform(carla.Location(x=self.x,y=self.y,z=self.z),carla.Rotation(yaw=config[3],pitch=config[4],roll=config[5]))]
         self._transform_index = 0
         self._sensors = [
             ['sensor.camera.depth', cc.Raw, 'Camera Depth (Raw)'],
@@ -748,7 +752,7 @@ class BasicSynchronousClient():
         self.world.on_tick()
         pass
 
-    def setup_car(self):
+    def setup_car(self,autopilot):
         """
         Spawns actor-vehicle to be controled.
         """
@@ -764,6 +768,8 @@ class BasicSynchronousClient():
         print("Ego vehicle location : {}".format(car_location))
 
         self.car = self.world.spawn_actor(car_bp, car_location)
+        if(autopilot):
+            self.car.set_autopilot()
         
 
     def setup_camera(self):
@@ -875,9 +881,9 @@ class BasicSynchronousClient():
             if(lidar_num==1):
                 bb_classes = []
                 for vehicle in self.vehicles:
-                    if(str(vehicle.type_id)[0:11] == 'vehicle.bmw'):
+                    if('bmw' in str(vehicle.type_id)):
                         bb_classes.append('c')    # car
-                    elif(str(vehicle.type_id[0:23] == 'vehicle.harley-davidson')):
+                    elif('harley' in str(vehicle.type_id)):
                         bb_classes.append('b')    # bike
                     else:
                         bb_classes.append('p')  # pedestrian
@@ -885,13 +891,14 @@ class BasicSynchronousClient():
                 ego_location = self.car.get_location()
                 ego_location = [ego_location.x,ego_location.y,ego_location.z]
                 
-                for i in range(len(bb_classes)):
+                for i in range(len(bb_classes)-1):
 #                    self.lis.append([bb_classes[i],(self.threedboxes[i]-ego_location).tolist()])
-                    x_coord = (self.threedboxes[i][0] - ego_location)[0]
-                    y_coord = (self.threedboxes[i][0] - ego_location)[1]
-#                    if(np.abs(x_coord) < ROI/2 and np.abs(y_coord) < ROI/2):
-                    self.lis.append([bb_classes[i],(self.threedboxes[i]-ego_location)[:,0:2].tolist()])
-#                    print('added')
+#                    x_coord = (self.threedboxes[i][0] - ego_location)[0]
+#                    y_coord = (self.threedboxes[i][0] - ego_location)[1]
+                    x_coord = self.threedboxes[i][0][0]
+                    y_coord = self.threedboxes[i][0][1]
+                    if(np.abs(x_coord) < ROI/2 and np.abs(y_coord) < ROI/2):
+                        self.lis.append([bb_classes[i],(self.threedboxes[i,:,:]).tolist()])
                 
         except:
             print("No BBoxes to save at counter: {}".format(self.save_counter[lidar_num-1]))
@@ -919,7 +926,7 @@ class BasicSynchronousClient():
             mini_image_y = MINI_WINDOW_HEIGHT - 20
 
             self.client = carla.Client('127.0.0.1', 2000)
-            self.client.set_timeout(2.0)
+            self.client.set_timeout(5.0)
 
             self.display = pygame.display.set_mode((VIEW_WIDTH, VIEW_HEIGHT*2), pygame.HWSURFACE | pygame.DOUBLEBUF)
 
@@ -927,7 +934,7 @@ class BasicSynchronousClient():
             self.width = VIEW_WIDTH
             self.height = VIEW_HEIGHT
             
-            self.setup_car()
+            self.setup_car(True)
             self.world_instance = World(self.world, self.width, self.height, self.car, gap_x, mini_image_y,self.delta_seconds,
                                         self.config,self.lidar_number)
             self.setup_camera()
@@ -938,7 +945,7 @@ class BasicSynchronousClient():
             self.vehicles = self.world.get_actors().filter('vehicle.*')
             self.lis = []
 
-#            controller = KeyboardControl(self.world_instance, False)
+#            controller = KeyboardControl(self.world_instance, True)
 
             skip_frame_till = 5
             current_skip_num = 0
@@ -979,7 +986,7 @@ class BasicSynchronousClient():
 
         finally:
 #            self.set_synchronous_mode(False)
-            with open('bb_classes.txt', 'w') as f:
+            with open('bb_classes_2.txt', 'w') as f:
                 json.dump(self.lis,f)
             self.camera.destroy()
             self.car.destroy()
@@ -999,12 +1006,13 @@ def main():
     """
 
     try:
-        delta_sec = 1/15
+        delta_sec = 1/30
 #        with open('lidar_config.txt') as f:
 #            lidar_config = json.load(f)
 #        index = len(lidar_config['lidar'])
-        config = [0, -1, 2.8, 0, 1, 2.8]
-        index = int(len(config)/3)
+        config = [-1.232, -0.03584, 2.3013, 0.14621, 0.1404, 2.1720, 
+                  1.43551, 0.694, 2.25, 3.1415, 3.0349, 2.779]
+        index = int(len(config)/6)
         client = BasicSynchronousClient(delta_sec,config,index)
         client.game_loop()
     finally:

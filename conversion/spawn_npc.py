@@ -60,7 +60,7 @@ def main():
 
     actor_list = []
     client = carla.Client(args.host, args.port)
-    client.set_timeout(2.0)
+    client.set_timeout(5.0)
 
     try:
 
@@ -89,8 +89,8 @@ def main():
             vehicle = world.try_spawn_actor(blueprint, transform)
             if vehicle is not None:
                 actor_list.append(vehicle)
-#                vehicle.set_autopilot()
-                vehicle.apply_control(carla.VehicleControl(throttle=0.05))
+                vehicle.set_autopilot()
+#                vehicle.apply_control(carla.VehicleControl(throttle=0.05))
 #                print('spawned %r at %s' % (vehicle.type_id, transform.location))
                 return True
             return False
